@@ -17,15 +17,42 @@ def randomly_pass_down(alleles):
 		return alleles[0]
 
 
+def missing_gene_fallback(snp_id):
+	data = {
+		'rs6828137': ('G', 0.55, 'T'),
+		'rs2748901': ('G', 0.43, 'A'),
+		'rs147068120': ('C', 0.96, 'T'),
+		'rs796296176': ('D', 0.996, 'I'),
+		'rs11957757': ('G', 0.77, 'A'), # Latin American 2
+		'rs12552712': ('T', 0.67, 'C'), # Latin American 2
+		'rs6944702': ('T', 0.51, 'C'), # European
+		'rs13297008': ('G', 0.37, 'A'), # European
+		'rs2854746': ('G', 1.0, 'C'), # Latin American 2
+		'rs116359091': ('G', 0.978, 'A'), # European
+	}
+	ref, p_ref, alt = data[snp_id]
+	if random.random() < p_ref:
+		return ref
+	else:
+		return alt
+
+
 def breed(genome1, genome2):
 	"""
 	Inputs: two dictionaries {rs123123: AA, rs5535: GG, etc}
 	"""
 	child_genome = {}
 
-	for snp_id in genome1:
-		parent1_allele = randomly_pass_down(genome1[snp_id])
-		parent2_allele = randomly_pass_down(genome2[snp_id])
+	for snp_id in set(genome1).union(set(genome2)):
+		try:
+			parent1_allele = randomly_pass_down(genome1[snp_id])
+		except KeyError:
+			parent1_allele = missing_gene_fallback(snp_id)
+		try:
+			parent2_allele = randomly_pass_down(genome2[snp_id])
+		except KeyError:
+			parent2_allele = missing_gene_fallback(snp_id)
+
 
 		child_alleles = parent1_allele + parent2_allele
 		child_genome[snp_id] = child_alleles
@@ -63,6 +90,20 @@ def predict_eye_color(genome, irisplex):
 	return p_blue, p_other, p_brown
 
 
+def predict_eye_color_2(genome, abd):
+	j = abd.copy()
+	j['genotype'] = pd.Series(genome)
+	j = j.dropna()
+
+	allele1 = j['genotype'].str[0]
+	allele2 = j['genotype'].str[1]
+	j['alt_allele_count'] = (allele1==j['Alt allele']).astype(int) + (allele2==j['Alt allele']).astype(int)
+	
+	effect = j['alt_allele_count'] * j['Beta']
+	
+	return 1 - sum(effect)
+
+
 def predict_hair_color(genome, hirisplex):
 	h2 = hirisplex.copy()
 	h2['my_genome'] = pd.Series(genome)
@@ -89,12 +130,15 @@ def predict_hair_color(genome, hirisplex):
 
 
 def print_parent(name, p_eyes, p_hair):
-	p_blue, p_other, p_brown = p_eyes
 	p_brnhr, p_red, p_black, p_blond = p_hair
 	print(f'{name}')
-	print((f'\tEyes: blue {round(p_blue*100)}%, '
-		   f'grn/hzl {round(p_other*100)}%, '
-		   f'brown {round(p_brown*100)}%'))
+	if type(p_eyes) is tuple:
+		p_blue, p_other, p_brown = p_eyes
+		print((f'\tEyes: blue {round(p_blue*100)}%, '
+			   f'grn/hzl {round(p_other*100)}%, '
+			   f'brown {round(p_brown*100)}%'))
+	elif type(p_eyes) is float:
+		print(f'\tEye darkness: {round(p_eyes)} out of 6')
 	print((f'\tHair: blond {round(p_blond*100)}%, '
 		   f'red {round(p_red*100)}%, '
 		   f'brown {round(p_brnhr*100)}%, '
@@ -113,39 +157,46 @@ def main(filenames):
 	# Read model data
 	irisplex = pd.read_csv('data/irisplex.csv').set_index('rsid')
 	hirisplex = pd.read_csv('data/hirisplex.csv').set_index('rsid')
+	abd = pd.read_csv("data/abd1239t1.csv").set_index('RS')
 
 	# Take only genes of interest
-	my_rsid = set(hirisplex.index).union(set(irisplex.index))
+	my_rsid = set(hirisplex.index).union(set(irisplex.index)).union(set(abd.index))
 	df1_iris = df1[df1['rsid'].isin(my_rsid)]
 	df2_iris = df2[df2['rsid'].isin(my_rsid)]
 
 	# Parent genomes
 	parent1_genome = df1_iris.set_index('rsid')['genotype'].to_dict()
 	parent2_genome = df2_iris.set_index('rsid')['genotype'].to_dict()
+	# print('intersection:', set(parent1_genome).intersection(set(parent2_genome)))
+	# print('diffs:', set(parent1_genome).union(set(parent2_genome)) - set(parent1_genome).intersection(set(parent2_genome)))
 	# print(pd.concat([df1_iris.set_index('rsid')['genotype'], df2_iris.set_index('rsid')['genotype']], axis=1))
-	p_eyes = predict_eye_color(parent1_genome, irisplex)
+	# p_eyes = predict_eye_color(parent1_genome, irisplex)
+	p_eyes = predict_eye_color_2(parent1_genome, abd)
 	p_hair = predict_hair_color(parent1_genome, hirisplex)
 	print_parent(name='Parent 1:', p_eyes=p_eyes, p_hair=p_hair)
-	p_eyes = predict_eye_color(parent2_genome, irisplex)
+	# p_eyes = predict_eye_color(parent2_genome, irisplex)
+	p_eyes = predict_eye_color_2(parent2_genome, abd)
 	p_hair = predict_hair_color(parent2_genome, hirisplex)
 	print_parent(name='Parent 2:', p_eyes=p_eyes, p_hair=p_hair)
 
 	# Get all offspring possibilities
-	n = 20
+	n = 200
 	children_eyes = []
 	children_hair = []
 	for i in range(n):
 		child_genome = breed(parent1_genome, parent2_genome)
+		x = random.random()
 
 		# Eye color
-		p_blue, p_other, p_brown = predict_eye_color(child_genome, irisplex)
-		x = random.random()
-		if x < p_blue:
-			children_eyes.append('blue')
-		if p_blue <= x < p_blue+p_brown:
-			children_eyes.append('brown')
-		if p_blue+p_brown <= x:
-			children_eyes.append('other')
+		# p_blue, p_other, p_brown = predict_eye_color(child_genome, irisplex)
+		# if x < p_blue:
+		# 	children_eyes.append('blue')
+		# if p_blue <= x < p_blue+p_brown:
+		# 	children_eyes.append('brown')
+		# if p_blue+p_brown <= x:
+		# 	children_eyes.append('other')
+		pred_darkness = predict_eye_color_2(child_genome, abd)
+		children_eyes.append(round(pred_darkness))
 
 		# Hair color
 		p_brnhr, p_red, p_black, p_blond = predict_hair_color(child_genome, hirisplex)
@@ -157,28 +208,36 @@ def main(filenames):
 			children_hair.append('blond')
 
 
-	n_blue = children_eyes.count('blue')
-	n_other = children_eyes.count('other')
-	n_brown = children_eyes.count('brown')
+	# n_blue = children_eyes.count('blue')
+	# n_other = children_eyes.count('other')
+	# n_brown = children_eyes.count('brown')
 	print(f'Randomly generated {n} children.')
-	if n <= 12:
-		s = ''
-		for i in range(n_blue):
-			s += '🔵'
-		for i in range(n_other):
-			s += '🟡'
-		for i in range(n_brown):
-			s += '🟤'
-		print(s)
-	else:
-		print('Hair:')
-		print(f'\tBlond: {children_hair.count("blond")}')
-		print(f'\tBrown: {children_hair.count("brown")}')
-		print(f'\tBlack: {children_hair.count("black")}')
-		print('Eyes:')
-		print(f'\tBlue: {n_blue}')
-		print(f'\tGreen/Hazel: {n_other}')
-		print(f'\tBrown: {n_brown}')
+	print('Eyes:')
+	print(pd.DataFrame(children_eyes).describe())
+	for i in range(1, 7):
+		print(f'\t{i}: {children_eyes.count(i)}')
+	print('Hair:')
+	print(f'\tBlond: {children_hair.count("blond")}')
+	print(f'\tBrown: {children_hair.count("brown")}')
+	print(f'\tBlack: {children_hair.count("black")}')
+	# if n <= 12:
+	# 	s = ''
+	# 	for i in range(n_blue):
+	# 		s += '🔵'
+	# 	for i in range(n_other):
+	# 		s += '🟡'
+	# 	for i in range(n_brown):
+	# 		s += '🟤'
+	# 	print(s)
+	# else:
+	# 	print('Hair:')
+	# 	print(f'\tBlond: {children_hair.count("blond")}')
+	# 	print(f'\tBrown: {children_hair.count("brown")}')
+	# 	print(f'\tBlack: {children_hair.count("black")}')
+	# 	print('Eyes:')
+	# 	print(f'\tBlue: {n_blue}')
+	# 	print(f'\tGreen/Hazel: {n_other}')
+	# 	print(f'\tBrown: {n_brown}')
 
 
 if __name__ == '__main__':
