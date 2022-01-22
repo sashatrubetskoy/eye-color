@@ -129,16 +129,14 @@ def predict_hair_color(genome, hirisplex):
 	return p_brown, p_red, p_black, p_blond
 
 
-def print_parent(name, p_eyes, p_hair):
+def print_parent(name, p_eyes1, p_eyes2, p_hair):
 	p_brnhr, p_red, p_black, p_blond = p_hair
 	print(f'{name}')
-	if type(p_eyes) is tuple:
-		p_blue, p_other, p_brown = p_eyes
-		print((f'\tEyes: blue {round(p_blue*100)}%, '
-			   f'grn/hzl {round(p_other*100)}%, '
-			   f'brown {round(p_brown*100)}%'))
-	elif type(p_eyes) is float:
-		print(f'\tEye darkness: {round(p_eyes)} out of 6')
+	p_blue, p_other, p_brown = p_eyes1
+	print((f'\tEyes (method 1): blue {round(p_blue*100)}%, '
+		   f'grn/hzl {round(p_other*100)}%, '
+		   f'brown {round(p_brown*100)}%'))
+	print(f'\tEye darkness (method 2): {round(p_eyes2)} out of 6')
 	print((f'\tHair: blond {round(p_blond*100)}%, '
 		   f'red {round(p_red*100)}%, '
 		   f'brown {round(p_brnhr*100)}%, '
@@ -170,14 +168,14 @@ def main(filenames):
 	# print('intersection:', set(parent1_genome).intersection(set(parent2_genome)))
 	# print('diffs:', set(parent1_genome).union(set(parent2_genome)) - set(parent1_genome).intersection(set(parent2_genome)))
 	# print(pd.concat([df1_iris.set_index('rsid')['genotype'], df2_iris.set_index('rsid')['genotype']], axis=1))
-	# p_eyes = predict_eye_color(parent1_genome, irisplex)
-	p_eyes = predict_eye_color_2(parent1_genome, abd)
+	p_eyes1 = predict_eye_color(parent1_genome, irisplex)
+	p_eyes2 = predict_eye_color_2(parent1_genome, abd)
 	p_hair = predict_hair_color(parent1_genome, hirisplex)
-	print_parent(name='Parent 1:', p_eyes=p_eyes, p_hair=p_hair)
-	# p_eyes = predict_eye_color(parent2_genome, irisplex)
-	p_eyes = predict_eye_color_2(parent2_genome, abd)
+	print_parent('Parent 1', p_eyes1, p_eyes2, p_hair)
+	p_eyes1 = predict_eye_color(parent2_genome, irisplex)
+	p_eyes2 = predict_eye_color_2(parent2_genome, abd)
 	p_hair = predict_hair_color(parent2_genome, hirisplex)
-	print_parent(name='Parent 2:', p_eyes=p_eyes, p_hair=p_hair)
+	print_parent('Parent 2', p_eyes1, p_eyes2, p_hair)
 
 	# Get all offspring possibilities
 	n = 200
@@ -213,7 +211,6 @@ def main(filenames):
 	# n_brown = children_eyes.count('brown')
 	print(f'Randomly generated {n} children.')
 	print('Eyes:')
-	print(pd.DataFrame(children_eyes).describe())
 	for i in range(1, 7):
 		print(f'\t{i}: {children_eyes.count(i)}')
 	print('Hair:')
